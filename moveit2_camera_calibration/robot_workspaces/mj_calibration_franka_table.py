@@ -78,7 +78,7 @@ class FrankaTable(dm_env.Environment):
     """
     This dm_env is intended to be used in conjunction with PyQt data collection application.
     The management of ROS communication is handled by the data collection application.
-    This application is intended to make data collection compatible with env_logger.
+    This application is intended to simplify moving the arm during camera calibration procedure.
     """
 
     def __init__(self):
@@ -110,114 +110,126 @@ class FrankaTable(dm_env.Environment):
         self.panda_arm = self.panda.get_planning_component("panda_arm") 
         self.gripper_client = GripperClient()
 
-        self.mode="pick"
-        self.current_observation = None
+        self.dummy_observation = {
+                                "dummy_output": np.zeros(7),                 
+                                }
+
+        self.workspace_params = None
 
     def reset(self) -> dm_env.TimeStep:
         return dm_env.TimeStep(
                 step_type=dm_env.StepType.FIRST,
                 reward=0.0,
                 discount=0.0,
-                observation=self.current_observation,
+                observation=self.dummy_observation,
                 )
 
-    def step(self, pose) -> dm_env.TimeStep:
-        if self.mode == "pick":
-            self.pick(pose)
-        else:
-            self.place(pose)
+    def step(self, dummy_action=np.zeros(7)) -> dm_env.TimeStep:
+        """
+        Samples and moves to a random pose within the calibration workspace.
+        """
+        # sample pose
+        pose_msg = PoseStamped()
+        pose_msg.header.frame_id = "panda_link0"
+        pose_msg.pose.position.x = self.starting_pose[0] + np.random.uniform(
+                self.workspace_params["x_min"], 
+                self.workspace_params["x_max"]
+                )
+        pose_msg.pose.position.y = self.starting_pose[1] + np.random.uniform(
+                self.workspace_params["y_min"],
+                self.workspace_params["y_max"]
+                )
+        pose_msg.pose.position.z = self.starting_pose[2] + np.random.uniform(
+                self.workspace_params["z_min"],
+                self.workspace_params["z_max"]
+                )
+        
+        # Create a rotation object from Euler angles specifying axes of rotation
+        rot_x = np.random.uniform(
+                self.workspace_params["rot_x_min"],
+                self.workspace_params["rot_x_max"]
+                )
+        rot_y = np.random.uniform(
+                self.workspace_params["rot_y_min"],
+                self.workspace_params["rot_y_max"]
+                )
+        rot_z = np.random.uniform(
+                self.workspace_params["rot_z_min"],
+                self.workspace_params["rot_z_max"]
+                )
+        rot = R.from_euler("XYZ", [rot_x, rot_y, rot_z], degrees=True)
+
+        existing_orientation = R.from_euler("XYZ", [
+            self.starting_pose[3],
+            self.starting_pose[4],
+            self.starting_pose[5],
+        ], degrees=True)
+
+        # Apply the rotation to the existing orientation
+        new_orientation = existing_orientation * rot
+        new_orientation_quat = new_orientation.as_quat()
+        pose_msg.pose.orientation.x = new_orientation_quat[0]
+        pose_msg.pose.orientation.y = new_orientation_quat[1]
+        pose_msg.pose.orientation.z = new_orientation_quat[2]
+        pose_msg.pose.orientation.w = new_orientation_quat[3]
+
+        # move to pose
+        self.panda_arm.set_start_state_to_current_state()
+        self.panda_arm.set_goal_state(pose_stamped_msg=pose_msg, pose_link="panda_link8")
+        plan_and_execute(self.panda, self.panda_arm, sleep_time=3.0)
 
         return dm_env.TimeStep(
                 step_type=dm_env.StepType.MID,
                 reward=0.0,
                 discount=0.0,
-                observation=self.current_observation,
+                observation=self.dummy_observation,
                 )
 
-    def set_observation(self, obs):
-        self.current_observation = obs
 
+    # both observation and action are dummy vectors as we are not using them
     def observation_spec(self) -> Dict[str, dm_env.specs.Array]:
         return {
-                #"overhead_camera/depth": dm_env.specs.Array(shape=(640,640), dtype=np.float32),
-                "overhead_camera/rgb": dm_env.specs.Array(shape=(640, 640, 3), dtype=np.float32),
+                "dummy_output": dm_env.specs.Array(shape=(7), dtype=np.float32),
                 }
 
     def action_spec(self) -> dm_env.specs.Array:
         return dm_env.specs.Array(
-                shape=(7,), # [x, y, z, qx, qy, qz, qw]
+                shape=(7,),
                 dtype=np.float32,
                 )
 
     def close(self):
         raise NotImplementedError
 
-    def pick(self, pose):
-        pick_pose_msg = PoseStamped()
-        pick_pose_msg.header.frame_id = "panda_link0"
-        pick_pose_msg.pose.position.x = pose[0]
-        pick_pose_msg.pose.position.y = pose[1]
-        pick_pose_msg.pose.position.z = pose[2]
-        pick_pose_msg.pose.orientation.x = pose[3]
-        pick_pose_msg.pose.orientation.y = pose[4]
-        pick_pose_msg.pose.orientation.z = pose[5]
-        pick_pose_msg.pose.orientation.w = pose[6]
+    def set_workspace(self, params):
+        self.starting_pose = self.gripper_pose()
+        self.workspace_params = params
+
+    def gripper2base(self):
+        """Get the transform from the gripper coordinate frame to the base coordinate frame"""
+        self.panda_arm.set_start_state_to_current_state()
+        robot_state = self.panda_arm.get_start_state()
+        return robot_state.get_frame_transform("panda_link8")
+
+    def gripper_pose(self):
+        """Get the pose of the gripper"""
+        self.panda_arm.set_start_state_to_current_state()
+        robot_state = self.panda_arm.get_start_state()
         
-        # prepick pose
-        self.panda_arm.set_start_state_to_current_state()
-        pre_pick_pose_msg = deepcopy(pick_pose_msg)
-        pre_pick_pose_msg.pose.position.z += 0.1
-        self.panda_arm.set_goal_state(pose_stamped_msg=pre_pick_pose_msg, pose_link="panda_link8")
-        plan_and_execute(self.panda, self.panda_arm, sleep_time=3.0)
+        pose = robot_state.get_pose("panda_link8")
 
-        # pick pose
-        self.panda_arm.set_start_state_to_current_state()
-        self.panda_arm.set_goal_state(pose_stamped_msg=pick_pose_msg, pose_link="panda_link8")
-        plan_and_execute(self.panda, self.panda_arm, sleep_time=3.0)
+        pose_pos = np.array([
+            pose.position.x,
+            pose.position.y,
+            pose.position.z,
+        ])
 
-        # close gripper
-        self.gripper_client.close_gripper()
-        time.sleep(2.0)
-        
-        # raise arm
-        self.panda_arm.set_start_state_to_current_state()
-        pre_pick_pose_msg.pose.position.z += 0.2
-        self.panda_arm.set_goal_state(pose_stamped_msg=pre_pick_pose_msg, pose_link="panda_link8")
-        plan_and_execute(self.panda, self.panda_arm, sleep_time=3.0)
+        pos_euler = R.from_quat([
+            pose.orientation.x,
+            pose.orientation.y,
+            pose.orientation.z,
+            pose.orientation.w,
+        ]).as_euler("xyz", degrees=True)
 
-        self.mode = "place"
+        return np.concatenate([pose_pos, pos_euler])
 
-    def place(self, pose):
-        place_pose_msg = PoseStamped()
-        place_pose_msg.header.frame_id = "panda_link0"
-        place_pose_msg.pose.position.x = pose[0]
-        place_pose_msg.pose.position.y = pose[1]
-        place_pose_msg.pose.position.z = pose[2]
-        place_pose_msg.pose.orientation.x = pose[3]
-        place_pose_msg.pose.orientation.y = pose[4]
-        place_pose_msg.pose.orientation.z = pose[5]
-        place_pose_msg.pose.orientation.w = pose[6]
-        
-        # preplace pose
-        self.panda_arm.set_start_state_to_current_state()
-        pre_place_pose_msg = deepcopy(place_pose_msg)
-        pre_place_pose_msg.pose.position.z += 0.1
-        self.panda_arm.set_goal_state(pose_stamped_msg=pre_place_pose_msg, pose_link="panda_link8")
-        plan_and_execute(self.panda, self.panda_arm, sleep_time=3.0)
-
-        # place pose
-        self.panda_arm.set_start_state_to_current_state()
-        self.panda_arm.set_goal_state(pose_stamped_msg=place_pose_msg, pose_link="panda_link8")
-        plan_and_execute(self.panda, self.panda_arm, sleep_time=3.0)
-
-        # open gripper
-        self.gripper_client.open_gripper()
-        time.sleep(2.0)
-        
-        # raise arm
-        self.panda_arm.set_start_state_to_current_state()
-        pre_place_pose_msg.pose.position.z += 0.2
-        self.panda_arm.set_goal_state(pose_stamped_msg=pre_place_pose_msg, pose_link="panda_link8")
-        plan_and_execute(self.panda, self.panda_arm, sleep_time=3.0)
-
-        self.mode = "pick"
