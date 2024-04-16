@@ -1,4 +1,6 @@
 import os
+import threading
+import argparse
 import time
 import yaml
 import sys
@@ -32,7 +34,9 @@ class ImageSubscriber(QThread):
     def run(self):
         node = rclpy.create_node('image_subscriber')
         subscription = node.create_subscription(Image, self.camera_topic, self.image_callback, 10)
-        rclpy.spin(node)
+        executor = rclpy.executors.MultiThreadedExecutor()
+        executor.add_node(node)
+        executor.spin()
 
     def image_callback(self, msg):
         rgb_img = self.cv_bridge.imgmsg_to_cv2(msg, "rgb8")
@@ -49,7 +53,9 @@ class CameraInfoSubscriber(QThread):
     def run(self):
         node = rclpy.create_node('camera_info_subscriber')
         subscription = node.create_subscription(CameraInfo, self.camera_info_topic, self.camera_info_callback, 10)
-        rclpy.spin(node)
+        executor = rclpy.executors.MultiThreadedExecutor()
+        executor.add_node(node)
+        executor.spin()
 
     def camera_info_callback(self, msg):
         self.new_camera_info.emit(msg)
@@ -65,7 +71,7 @@ class MainWindow(QMainWindow):
         # GUI application parameters
         self.calibration_status = "None"
         self.current_image = None
-        self.camer_info = None
+        self.camera_info = None
         
         # initialize the GUI
         self.initUI()
@@ -164,6 +170,10 @@ class MainWindow(QMainWindow):
         qimg = QImage(rgb_img.data, width, height, QImage.Format(13))
         pixmap = QPixmap.fromImage(qimg)
         self.label_image.setPixmap(pixmap)
+    
+    def update_camera_info(self, data):
+        # store the current image
+        pass
     
     def upload_aruco_parameters(self):
         # get the path to the aruco parameters file
@@ -426,8 +436,15 @@ class MainWindow(QMainWindow):
 
 
 def main(args=None):
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--robot_ip", default="192.168.106.99", required=False)
+    parser.add_argument("--use_fake_hardware", default="false", required=False)
+    parser.add_argument("--use_gripper", default="true", required=False)
+    parser.add_argument("--gripper_controller", default="/robotiq/robotiq_gripper_controller/gripper_cmd", required=False)
+    args = parser.parse_args()
+
     rclpy.init(args=None)
-    env = FrankaTable()
+    env = FrankaTable(args)
     os.makedirs(os.path.join(os.path.dirname(__file__), "data"), exist_ok=True)
     app = QApplication(sys.argv)
     ex = MainWindow(env)
