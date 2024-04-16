@@ -1,0 +1,17 @@
+version: "3"
+
+services: 
+  zed2i_1:
+    image: ghcr.io/peterdavidfagan/moveit2_camera_calibration:humble
+    container_name: moveit2_camera_calibration
+    build: 
+      context: ../
+      dockerfile: .docker/Dockerfile
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+    devices:
+      - "/dev:/dev"
+    privileged: true
+    runtime: nvidia
+    network_mode: "host"
+    command: python3 moveit2_camera_calibration/camera_calibration_app.py 
