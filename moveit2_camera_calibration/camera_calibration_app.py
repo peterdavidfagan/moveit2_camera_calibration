@@ -481,7 +481,7 @@ class MainWindow(QMainWindow):
         self.calibration_status=f"success: {current_time}"
         with open(f"./results/{current_time}.txt", 'w') as file:
             file.write("Camera Topic:\n")
-            file.write(f"{self.camera_topic_name} \n")
+            file.write(f"{self.camera_topic_name.text()} \n")
             file.write("Camera Info:\n")
             file.write(f"{self.camera_info} \n")
             file.write("Positions (x, y, x):\n")
@@ -562,7 +562,7 @@ class MainWindow(QMainWindow):
         self.calibration_status=f"success: {current_time}"
         with open(f"./results/{current_time}.txt", 'w') as file:
             file.write("Camera Topic:\n")
-            file.write(f"{self.camera_topic_name} \n")
+            file.write(f"{self.camera_topic_name.text()} \n")
             file.write("Camera Info:\n")
             file.write(f"{self.camera_info} \n")
             file.write("Positions (x, y, x):\n")
