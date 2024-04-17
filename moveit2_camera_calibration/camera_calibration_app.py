@@ -19,7 +19,7 @@ from sensor_msgs.msg import Image, CameraInfo
 
 import cv2
 
-from robot_workspaces.mj_calibration_franka_table import FrankaTable
+from robot_workspaces.franka_table import FrankaTable
 import envlogger
 
 
@@ -32,15 +32,24 @@ class ImageSubscriber(QThread):
         self.camera_topic = camera_topic
 
     def run(self):
-        node = rclpy.create_node('image_subscriber')
-        subscription = node.create_subscription(Image, self.camera_topic, self.image_callback, 10)
-        executor = rclpy.executors.MultiThreadedExecutor()
-        executor.add_node(node)
-        executor.spin()
+        self.node = rclpy.create_node('image_subscriber')
+        self.subscription = self.node.create_subscription(Image, self.camera_topic, self.image_callback, 10)
+        self.executor = rclpy.executors.MultiThreadedExecutor()
+        self.executor.add_node(self.node)
+        self.executor.spin()
+
+    def update_topic(self, camera_topic):
+        self.camera_topic = camera_topic
+        self.executor.remove_node(self.node)
+        self.node.destroy_subscription(self.subscription)
+        self.subscription = self.node.create_subscription(Image, self.camera_topic, self.image_callback, 10)
+        self.executor.add_node(self.node)
+        self.executor.wake()
 
     def image_callback(self, msg):
         rgb_img = self.cv_bridge.imgmsg_to_cv2(msg, "rgb8")
         self.new_image.emit(rgb_img)
+
 
 
 class CameraInfoSubscriber(QThread):
@@ -51,11 +60,19 @@ class CameraInfoSubscriber(QThread):
         self.camera_info_topic = camera_info_topic
 
     def run(self):
-        node = rclpy.create_node('camera_info_subscriber')
-        subscription = node.create_subscription(CameraInfo, self.camera_info_topic, self.camera_info_callback, 10)
-        executor = rclpy.executors.MultiThreadedExecutor()
-        executor.add_node(node)
-        executor.spin()
+        self.node = rclpy.create_node('camera_info_subscriber')
+        self.subscription = self.node.create_subscription(CameraInfo, self.camera_info_topic, self.camera_info_callback, 10)
+        self.executor = rclpy.executors.MultiThreadedExecutor()
+        self.executor.add_node(self.node)
+        self.executor.spin()
+
+    def update_topic(self, camera_info_topic):
+        self.camera_info_topic = camera_info_topic
+        self.executor.remove_node(self.node)
+        self.node.destroy_subscription(self.subscription)
+        self.subscription = self.node.create_subscription(Image, self.camera_info_topic, self.image_callback, 10)
+        self.executor.add_node(self.node)
+        self.executor.wake()
 
     def camera_info_callback(self, msg):
         self.new_camera_info.emit(msg)
@@ -70,7 +87,9 @@ class MainWindow(QMainWindow):
 
         # GUI application parameters
         self.calibration_status = "None"
+        self.image_subscriber = None
         self.current_image = None
+        self.camera_info_subscriber = None
         self.camera_info = None
         
         # initialize the GUI
@@ -151,11 +170,16 @@ class MainWindow(QMainWindow):
         self.show()
 
     def update_camera_topic(self):
-        self.image_subscriber = ImageSubscriber(self.camera_topic_name.text())
-        self.image_subscriber.new_image.connect(self.update_image)
-        self.image_subscriber.start()
+        if self.image_subscriber is not None:
+            self.image_subscriber.update_topic(self.camera_topic_name.text())
+        else:
+            self.image_subscriber = ImageSubscriber(self.camera_topic_name.text())
+            self.image_subscriber.new_image.connect(self.update_image)
+            self.image_subscriber.start()
 
     def update_camera_info_topic(self):
+        if self.camera_info_subscriber is not None:
+            del self.camera_info_subscriber
         self.camera_info_subscriber = CameraInfoSubscriber(self.camera_info_topic_name.text())
         self.camera_info_subscriber.new_camera_info.connect(self.update_camera_info)
         self.camera_info_subscriber.start()
