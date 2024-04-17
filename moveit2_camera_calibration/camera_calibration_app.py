@@ -155,12 +155,15 @@ class MainWindow(QMainWindow):
 
         # GUI application parameters
         self.calibration_status = "None"
+        
         self.image_subscriber = None
         self.current_image = None
+        
         self.camera_info_subscriber = None
         self.camera_info = None
         
         # results
+        os.makedirs("./results", exist_ok=True)
         self.rmat = None
         self.pos = None
 
@@ -471,9 +474,29 @@ class MainWindow(QMainWindow):
         # overwrite params 
         self.rmat = rmat
         self.pos = pos
+        quat = R.from_matrix(self.rmat).as_quat()
 
-        print(self.rmat)
-        print(self.pos)
+        t = time.localtime()
+        current_time = time.strftime("%H:%M:%S", t)
+        self.calibration_status=f"success: {current_time}"
+        with open(f"./results/{current_time}.txt", 'w') as file:
+            file.write("Camera Topic:\n")
+            file.write(f"{self.camera_topic_name} \n")
+            file.write("Camera Info:\n")
+            file.write(f"{self.camera_info} \n")
+            file.write("Positions (x, y, x):\n")
+            file.write(f"{self.pos} \n")
+            file.write("Rotation Matrix:\n")
+            file.write(f"{self.rmat} \n")
+            file.write("Quaternion:\n")
+            file.write(f"{quat} \n")
+    
+        np.savez(
+            file=f"./results/{current_time}.npz", 
+            position=self.pos, 
+            rotation=self.rmat,
+            quaternion=quat)
+        
 
     def run_eye_in_hand_calibration(self):
         """Calibrate hand-mounted camera to robot gripper"""
@@ -532,9 +555,28 @@ class MainWindow(QMainWindow):
         # overwrite params 
         self.rmat = rmat
         self.pos = pos
+        quat = R.from_matrix(self.rmat).as_quat()
 
-        print(self.rmat)
-        print(self.pos)
+        t = time.localtime()
+        current_time = time.strftime("%H:%M:%S", t)
+        self.calibration_status=f"success: {current_time}"
+        with open(f"./results/{current_time}.txt", 'w') as file:
+            file.write("Camera Topic:\n")
+            file.write(f"{self.camera_topic_name} \n")
+            file.write("Camera Info:\n")
+            file.write(f"{self.camera_info} \n")
+            file.write("Positions (x, y, x):\n")
+            file.write(f"{self.pos} \n")
+            file.write("Rotation Matrix:\n")
+            file.write(f"{self.rmat} \n")
+            file.write("Quaternion:\n")
+            file.write(f"{quat} \n")
+    
+        np.savez(
+            file=f"./results/{current_time}.npz", 
+            position=self.pos, 
+            rotation=self.rmat,
+            quaternion=quat)
 
     def start_calibration(self):
         if self.calibration_type_button_group.checkedId() == 0:
@@ -555,7 +597,6 @@ def main(args=None):
 
     rclpy.init(args=None)
     env = FrankaTable(args)
-    os.makedirs(os.path.join(os.path.dirname(__file__), "data"), exist_ok=True)
     app = QApplication(sys.argv)
     ex = MainWindow(env)
     sys.exit(app.exec())
