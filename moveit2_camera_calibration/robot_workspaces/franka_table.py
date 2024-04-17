@@ -157,9 +157,9 @@ class FrankaTable(dm_env.Environment):
                 self.workspace_params["rot_z_min"],
                 self.workspace_params["rot_z_max"]
                 )
-        rot = R.from_euler("XYZ", [rot_x, rot_y, rot_z], degrees=True)
+        rot = R.from_euler("xyz", [rot_x, rot_y, rot_z], degrees=True)
 
-        existing_orientation = R.from_euler("XYZ", [
+        existing_orientation = R.from_euler("xyz", [
             self.starting_pose[3],
             self.starting_pose[4],
             self.starting_pose[5],

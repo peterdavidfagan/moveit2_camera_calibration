@@ -8,9 +8,9 @@ import math
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 import scipy.spatial.transform as st
-from PyQt6.QtWidgets import QApplication, QMainWindow, QLabel, QLineEdit, QPushButton, QVBoxLayout, QHBoxLayout, QWidget, QFileDialog, QRadioButton, QButtonGroup
-from PyQt6.QtGui import QPixmap, QImage, QMouseEvent
-from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal
+from PyQt6.QtWidgets import *
+from PyQt6.QtGui import *
+from PyQt6.QtCore import *
 
 import rclpy
 from rclpy.node import Node
@@ -21,10 +21,38 @@ from cv_bridge import CvBridge
 from sensor_msgs.msg import Image, CameraInfo
 
 import cv2
+from cv2 import aruco
 
 from robot_workspaces.franka_table import FrankaTable
 import envlogger
 
+class Worker(QRunnable):
+    '''
+    Worker thread
+
+    Inherits from QRunnable to handler worker thread setup, signals and wrap-up.
+
+    :param callback: The function callback to run on this worker thread. Supplied args and
+                     kwargs will be passed through to the runner.
+    :type callback: function
+    :param args: Arguments to pass to the callback function
+    :param kwargs: Keywords to pass to the callback function
+
+    '''
+
+    def __init__(self, fn, *args, **kwargs):
+        super(Worker, self).__init__()
+        # Store constructor arguments (re-used for processing)
+        self.fn = fn
+        self.args = args
+        self.kwargs = kwargs
+
+    @pyqtSlot()
+    def run(self):
+        '''
+        Initialise the runner function with passed args, kwargs.
+        '''
+        self.fn(*self.args, **self.kwargs)
 
 class ImageSubscriber(QThread):
     new_image = pyqtSignal(object)
@@ -79,10 +107,22 @@ class CameraInfoSubscriber(QThread):
     def __init__(self, camera_info_topic):
         super().__init__()
         self.camera_info_topic = camera_info_topic
+        self.camera_callback_group = ReentrantCallbackGroup()
+        self.camera_qos_profile = QoSProfile(
+                depth=1,
+                history=QoSHistoryPolicy(rclpy.qos.HistoryPolicy.KEEP_LAST),
+                reliability=QoSReliabilityPolicy(rclpy.qos.ReliabilityPolicy.RELIABLE),
+            )
 
     def run(self):
         self.node = rclpy.create_node('camera_info_subscriber')
-        self.subscription = self.node.create_subscription(CameraInfo, self.camera_info_topic, self.camera_info_callback, 10)
+        self.subscription = self.node.create_subscription(
+            CameraInfo, 
+            self.camera_info_topic, 
+            self.camera_info_callback, 
+            self.camera_qos_profile,
+            callback_group=self.camera_callback_group,
+            )
         self.executor = rclpy.executors.MultiThreadedExecutor()
         self.executor.add_node(self.node)
         self.executor.spin()
@@ -91,7 +131,13 @@ class CameraInfoSubscriber(QThread):
         self.camera_info_topic = camera_info_topic
         self.executor.remove_node(self.node)
         self.node.destroy_subscription(self.subscription)
-        self.subscription = self.node.create_subscription(Image, self.camera_info_topic, self.camera_info_callback, 10)
+        self.subscription = self.node.create_subscription(
+            CameraInfo, 
+            self.camera_info_topic, 
+            self.camera_info_callback, 
+            self.camera_qos_profile,
+            callback_group=self.camera_callback_group,
+            )
         self.executor.add_node(self.node)
         self.executor.wake()
 
@@ -105,6 +151,7 @@ class MainWindow(QMainWindow):
 
         # environment for execution of task
         self.env = env
+        self.threadpool = QThreadPool()
 
         # GUI application parameters
         self.calibration_status = "None"
@@ -113,6 +160,10 @@ class MainWindow(QMainWindow):
         self.camera_info_subscriber = None
         self.camera_info = None
         
+        # results
+        self.rmat = None
+        self.pos = None
+
         # initialize the GUI
         self.initUI()
 
@@ -148,7 +199,7 @@ class MainWindow(QMainWindow):
         self.camera_info_topic_name.setFixedHeight(20)
         self.camera_info_topic_name.returnPressed.connect(self.update_camera_info_topic)
 
-        self.upload_aruco_parameters_button = QPushButton("Upload Aruco Parameters")
+        self.upload_aruco_parameters_button = QPushButton("Upload Calibration Config")
         self.upload_aruco_parameters_button.setFixedHeight(20)
         self.upload_aruco_parameters_button.clicked.connect(self.upload_aruco_parameters)
 
@@ -207,7 +258,6 @@ class MainWindow(QMainWindow):
             self.camera_info_subscriber.start()
 
     def update_image(self, rgb_img):
-        print("updating image")
         # store the current image
         self.current_image = rgb_img.copy() 
 
@@ -270,6 +320,7 @@ class MainWindow(QMainWindow):
 
         # if no markers found, return
         if ids is None:
+            print("No markers found!")
             return None, None
 
         # detect charuco board
@@ -284,6 +335,7 @@ class MainWindow(QMainWindow):
 
         # if no charuco board found, return
         if num_corners_found < 5:
+            print("Charuco board not found!")
             return None, None
 
         # draw detected charuco board
@@ -358,7 +410,7 @@ class MainWindow(QMainWindow):
         if calibration_error > 3.0:
             return None
 
-        rmats = [Rotation.from_rotvec(rvec.flatten()).as_matrix() for rvec in rvecs]
+        rmats = [R.from_rotvec(rvec.flatten()).as_matrix() for rvec in rvecs]
         tvecs = [tvec.flatten() for tvec in tvecs]
 
         return rmats, tvecs, final_successes
@@ -381,7 +433,6 @@ class MainWindow(QMainWindow):
             
             # capture image
             img = self.current_image.copy()
-            print(img)
             images.append(img)
 
             # capture gripper pose
@@ -417,7 +468,12 @@ class MainWindow(QMainWindow):
             method=4,
         )
 
-        return rmat, pos
+        # overwrite params 
+        self.rmat = rmat
+        self.pos = pos
+
+        print(self.rmat)
+        print(self.pos)
 
     def run_eye_in_hand_calibration(self):
         """Calibrate hand-mounted camera to robot gripper"""
@@ -473,13 +529,20 @@ class MainWindow(QMainWindow):
             method=4,
         )
         
-        return rmat, pos
+        # overwrite params 
+        self.rmat = rmat
+        self.pos = pos
+
+        print(self.rmat)
+        print(self.pos)
 
     def start_calibration(self):
         if self.calibration_type_button_group.checkedId() == 0:
-            self.run_eye_in_hand_calibration()
+            worker = Worker(self.run_eye_in_hand_calibration)
         else:
-            self.run_eye_2_hand_calibration()
+            worker = Worker(self.run_eye_2_hand_calibration)
+        
+        self.threadpool.start(worker)
 
 
 def main(args=None):
