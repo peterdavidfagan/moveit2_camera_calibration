@@ -14,6 +14,9 @@ from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal
 
 import rclpy
 from rclpy.node import Node
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
+from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSHistoryPolicy, QoSReliabilityPolicy
+
 from cv_bridge import CvBridge
 from sensor_msgs.msg import Image, CameraInfo
 
@@ -30,10 +33,22 @@ class ImageSubscriber(QThread):
         super().__init__()
         self.cv_bridge = CvBridge()
         self.camera_topic = camera_topic
+        self.camera_callback_group = ReentrantCallbackGroup()
+        self.camera_qos_profile = QoSProfile(
+                depth=1,
+                history=QoSHistoryPolicy(rclpy.qos.HistoryPolicy.KEEP_LAST),
+                reliability=QoSReliabilityPolicy(rclpy.qos.ReliabilityPolicy.RELIABLE),
+            )
 
     def run(self):
         self.node = rclpy.create_node('image_subscriber')
-        self.subscription = self.node.create_subscription(Image, self.camera_topic, self.image_callback, 10)
+        self.subscription = self.node.create_subscription(
+            Image, 
+            self.camera_topic, 
+            self.image_callback, 
+            self.camera_qos_profile,
+            callback_group=self.camera_callback_group,
+            )
         self.executor = rclpy.executors.MultiThreadedExecutor()
         self.executor.add_node(self.node)
         self.executor.spin()
@@ -42,7 +57,13 @@ class ImageSubscriber(QThread):
         self.camera_topic = camera_topic
         self.executor.remove_node(self.node)
         self.node.destroy_subscription(self.subscription)
-        self.subscription = self.node.create_subscription(Image, self.camera_topic, self.image_callback, 10)
+        self.subscription = self.node.create_subscription(
+            Image, 
+            self.camera_topic, 
+            self.image_callback, 
+            self.camera_qos_profile,
+            callback_group=self.camera_callback_group,
+            )
         self.executor.add_node(self.node)
         self.executor.wake()
 
@@ -70,7 +91,7 @@ class CameraInfoSubscriber(QThread):
         self.camera_info_topic = camera_info_topic
         self.executor.remove_node(self.node)
         self.node.destroy_subscription(self.subscription)
-        self.subscription = self.node.create_subscription(Image, self.camera_info_topic, self.image_callback, 10)
+        self.subscription = self.node.create_subscription(Image, self.camera_info_topic, self.camera_info_callback, 10)
         self.executor.add_node(self.node)
         self.executor.wake()
 
@@ -186,6 +207,7 @@ class MainWindow(QMainWindow):
             self.camera_info_subscriber.start()
 
     def update_image(self, rgb_img):
+        print("updating image")
         # store the current image
         self.current_image = rgb_img.copy() 
 
@@ -196,9 +218,8 @@ class MainWindow(QMainWindow):
         pixmap = QPixmap.fromImage(qimg)
         self.label_image.setPixmap(pixmap)
     
-    def update_camera_info(self, data):
-        # store the current image
-        pass
+    def update_camera_info(self, camera_info):
+        self.camera_info = camera_info        
     
     def upload_aruco_parameters(self):
         # get the path to the aruco parameters file
@@ -243,8 +264,8 @@ class MainWindow(QMainWindow):
             ids,
             rejectedImgPoints,
             parameters=self.detector_params,
-            cameraMatrix=np.array(self._camera_info.k).reshape(3,3),
-            distCoeffs=np.array(self._camera_info.d),
+            cameraMatrix=np.array(self.camera_info.k).reshape(3,3),
+            distCoeffs=np.array(self.camera_info.d),
             )
 
         # if no markers found, return
@@ -257,8 +278,8 @@ class MainWindow(QMainWindow):
             ids, 
             image, 
             self.charuco_board, 
-            cameraMatrix=np.array(self._camera_info.k).reshape(3,3),
-            distCoeffs=np.array(self._camera_info.d),
+            cameraMatrix=np.array(self.camera_info.k).reshape(3,3),
+            distCoeffs=np.array(self.camera_info.d),
         )
 
         # if no charuco board found, return
@@ -304,8 +325,8 @@ class MainWindow(QMainWindow):
                 board=self.charuco_board,
                 imageSize=fixed_image_size,
                 flags=self.calib_flags,
-                cameraMatrix=np.array(self._camera_info.k).reshape(3,3),
-                distCoeffs=np.array(self._camera_info.d),
+                cameraMatrix=np.array(self.camera_info.k).reshape(3,3),
+                distCoeffs=np.array(self.camera_info.d),
             )
         )
 
@@ -329,8 +350,8 @@ class MainWindow(QMainWindow):
             board=self.charuco_board,
             imageSize=fixed_image_size,
             flags=self.calib_flags,
-            cameraMatrix=np.array(self._camera_info.k).reshape(3,3),
-            distCoeffs=np.array(self._camera_info.d),
+            cameraMatrix=np.array(self.camera_info.k).reshape(3,3),
+            distCoeffs=np.array(self.camera_info.d),
         )
         
         # Return Transformation #
@@ -360,6 +381,7 @@ class MainWindow(QMainWindow):
             
             # capture image
             img = self.current_image.copy()
+            print(img)
             images.append(img)
 
             # capture gripper pose
