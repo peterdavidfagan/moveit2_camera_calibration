@@ -179,10 +179,11 @@ class MainWindow(QMainWindow):
 
     def update_camera_info_topic(self):
         if self.camera_info_subscriber is not None:
-            del self.camera_info_subscriber
-        self.camera_info_subscriber = CameraInfoSubscriber(self.camera_info_topic_name.text())
-        self.camera_info_subscriber.new_camera_info.connect(self.update_camera_info)
-        self.camera_info_subscriber.start()
+            self.camera_info_subscriber.update_topic(self.camera_info_topic_name.text())
+        else:
+            self.camera_info_subscriber = CameraInfoSubscriber(self.camera_info_topic_name.text())
+            self.camera_info_subscriber.new_camera_info.connect(self.update_camera_info)
+            self.camera_info_subscriber.start()
 
     def update_image(self, rgb_img):
         # store the current image
