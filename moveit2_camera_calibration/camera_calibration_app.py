@@ -53,6 +53,7 @@ class Worker(QRunnable):
         '''
         self.fn(*self.args, **self.kwargs)
 
+
 class ImageSubscriber(QThread):
     new_image = pyqtSignal(object)
 
@@ -97,7 +98,6 @@ class ImageSubscriber(QThread):
     def image_callback(self, msg):
         rgb_img = self.cv_bridge.imgmsg_to_cv2(msg, "rgb8")
         self.new_image.emit(rgb_img)
-
 
 
 class CameraInfoSubscriber(QThread):
@@ -485,29 +485,7 @@ class MainWindow(QMainWindow):
         # overwrite params 
         self.rmat = rmat
         self.pos = pos
-        quat = R.from_matrix(self.rmat).as_quat()
-
-        t = time.localtime()
-        current_time = time.strftime("%H:%M:%S", t)
-        self.calibration_status=f"success: {current_time}"
-        with open(f"./results/{current_time}.txt", 'w') as file:
-            file.write("Camera Topic:\n")
-            file.write(f"{self.camera_topic_name.text()} \n")
-            file.write("Camera Info:\n")
-            file.write(f"{self.camera_info} \n")
-            file.write("Positions (x, y, x):\n")
-            file.write(f"{self.pos} \n")
-            file.write("Rotation Matrix:\n")
-            file.write(f"{self.rmat} \n")
-            file.write("Quaternion:\n")
-            file.write(f"{quat} \n")
-    
-        np.savez(
-            file=f"./results/{current_time}.npz", 
-            position=self.pos, 
-            rotation=self.rmat,
-            quaternion=quat)
-        
+        self.write_results_to_file()
 
     def run_eye_in_hand_calibration(self):
         """Calibrate hand-mounted camera to robot gripper"""
@@ -566,8 +544,21 @@ class MainWindow(QMainWindow):
         # overwrite params 
         self.rmat = rmat
         self.pos = pos
-        quat = R.from_matrix(self.rmat).as_quat()
+        self.write_results_to_file()
 
+    def start_calibration(self):
+        if self.calibration_type_button_group.checkedId() == 0:
+            worker = Worker(self.run_eye_in_hand_calibration)
+        else:
+            worker = Worker(self.run_eye_2_hand_calibration)
+        
+        self.threadpool.start(worker)
+
+    def write_results_to_file(self):
+        #compute additional representation formats
+        quat = R.from_matrix(self.rmat).as_quat()
+        
+        # write results to file
         t = time.localtime()
         current_time = time.strftime("%H:%M:%S", t)
         self.calibration_status=f"success: {current_time}"
@@ -588,14 +579,6 @@ class MainWindow(QMainWindow):
             position=self.pos, 
             rotation=self.rmat,
             quaternion=quat)
-
-    def start_calibration(self):
-        if self.calibration_type_button_group.checkedId() == 0:
-            worker = Worker(self.run_eye_in_hand_calibration)
-        else:
-            worker = Worker(self.run_eye_2_hand_calibration)
-        
-        self.threadpool.start(worker)
 
 
 def main(args=None):
