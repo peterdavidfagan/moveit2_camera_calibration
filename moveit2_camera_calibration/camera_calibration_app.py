@@ -201,9 +201,9 @@ class MainWindow(QMainWindow):
         self.camera_info_topic_name.setFixedHeight(20)
         self.camera_info_topic_name.returnPressed.connect(self.update_camera_info_topic)
 
-        self.upload_aruco_parameters_button = QPushButton("Upload Calibration Config")
-        self.upload_aruco_parameters_button.setFixedHeight(20)
-        self.upload_aruco_parameters_button.clicked.connect(self.upload_aruco_parameters)
+        self.upload_application_parameters_button = QPushButton("Upload Application Config")
+        self.upload_application_parameters_button.setFixedHeight(20)
+        self.upload_application_parameters_button.clicked.connect(self.upload_application_parameters)
 
         # checkbox for calibration type
         self.calibration_type_label = QLabel("Calibration Type:")
@@ -228,7 +228,7 @@ class MainWindow(QMainWindow):
         right_pane.addWidget(self.camera_topic_label)
         right_pane.addWidget(self.camera_topic_name)
         right_pane.addWidget(self.camera_info_topic_name)
-        right_pane.addWidget(self.upload_aruco_parameters_button)
+        right_pane.addWidget(self.upload_application_parameters_button)
         right_pane.addWidget(self.calibration_type_label)
         right_pane.addWidget(self.calibration_type_eye_in_hand)
         right_pane.addWidget(self.calibration_type_hand_eye)
@@ -273,27 +273,39 @@ class MainWindow(QMainWindow):
     def update_camera_info(self, camera_info):
         self.camera_info = camera_info        
     
-    def upload_aruco_parameters(self):
-        # get the path to the aruco parameters file
-        file_path, _ = QFileDialog.getOpenFileName(self, "Open Aruco Parameters File", "", "YAML Files (*.yaml)")
+    def upload_application_parameters(self):
+        # get the path to the application parameters file
+        file_path, _ = QFileDialog.getOpenFileName(self, "Open Application Parameters File", "", "YAML Files (*.yaml)")
         if file_path:
             # read the yaml file
             with open(file_path, "r") as file:
-                self.calib_config = yaml.load(file, Loader=yaml.FullLoader)
+                self.config = yaml.load(file, Loader=yaml.FullLoader)
 
-            self.aruco_dict = cv2.aruco.Dictionary_get(cv2.aruco.DICT_5X5_100)
+            # camera topic
+            if self.config["camera_image_topic"]!="":
+                self.camera_topic_name.text() = self.config["camera_image_topic"]
+                self.update_camera_topic()
+
+            if self.config["camera_info_topic"]!="":
+                self.camera_info_topic_name.text() = self.config["camera_info_topic"]
+                self.update_camera_info_topic()
+
+            # aruco board detection
+            self.aruco_dict = cv2.aruco.Dictionary_get(cv2.aruco.DICT_5X5_100) # TODO: move to config   
             self.charuco_board = cv2.aruco.CharucoBoard_create(
-                self.calib_config["charuco"]["squares_x"],
-                self.calib_config["charuco"]["squares_y"],
-                self.calib_config["charuco"]["square_length"],
-                self.calib_config["charuco"]["marker_length"],
+                self.config["charuco"]["squares_x"],
+                self.config["charuco"]["squares_y"],
+                self.config["charuco"]["square_length"],
+                self.config["charuco"]["marker_length"],
                 self.aruco_dict
             )
             self.detector_params = cv2.aruco.DetectorParameters_create()
             self.detector_params.cornerRefinementMethod = cv2.aruco.CORNER_REFINE_SUBPIX
             self.calib_flags = cv2.CALIB_USE_INTRINSIC_GUESS + cv2.CALIB_FIX_PRINCIPAL_POINT + cv2.CALIB_FIX_FOCAL_LENGTH
             self.cv_bridge = CvBridge()
-        self.env.set_workspace(self.calib_config["workspace"]) 
+            
+            # workspace bounds config
+            self.env.set_workspace(self.config["workspace"]) 
 
     def detect_charuco_board(self, image):
         """
@@ -424,12 +436,12 @@ class MainWindow(QMainWindow):
             raise Exception("No image or camera info received yet")
         
         # collect samples
-        workspace_config = self.calib_config["workspace"]
+        workspace_config = self.config["workspace"]
 
         images = []
         gripper2base_vals = []
         gripper_poses = []
-        for i in range(self.calib_config["eye_to_hand_calibration"]["num_samples"]):
+        for i in range(self.config["eye_to_hand_calibration"]["num_samples"]):
             self.env.step() 
             time.sleep(0.5) # required to ensure latest image is captured
             
@@ -446,7 +458,7 @@ class MainWindow(QMainWindow):
             gripper2base_vals.append(gripper2base)
             
             # sleep
-            time.sleep(self.calib_config["eye_to_hand_calibration"]["sample_delay"])
+            time.sleep(self.config["eye_to_hand_calibration"]["sample_delay"])
         
         # process captured images
         readings = []
@@ -504,12 +516,12 @@ class MainWindow(QMainWindow):
             raise Exception("No image or camera info received yet")
         
         # collect samples
-        workspace_config = self.calib_config["workspace"]
+        workspace_config = self.config["workspace"]
 
         images = []
         gripper2base_vals = []
         gripper_poses = []
-        for i in range(self.calib_config["eye_to_hand_calibration"]["num_samples"]):
+        for i in range(self.config["eye_to_hand_calibration"]["num_samples"]):
             self.env.step() 
             time.sleep(0.5) # required to ensure latest image is captured
             
@@ -526,7 +538,7 @@ class MainWindow(QMainWindow):
             gripper2base_vals.append(gripper2base)
             
             # sleep
-            time.sleep(self.calib_config["eye_to_hand_calibration"]["sample_delay"])
+            time.sleep(self.config["eye_to_hand_calibration"]["sample_delay"])
 
         # process captured images
         readings = []
