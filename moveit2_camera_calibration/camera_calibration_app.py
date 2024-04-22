@@ -24,7 +24,6 @@ import cv2
 from cv2 import aruco
 
 from robot_workspaces.franka_table import FrankaTable
-import envlogger
 
 class Worker(QRunnable):
     '''
