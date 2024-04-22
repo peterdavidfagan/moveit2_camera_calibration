@@ -1,3 +1,6 @@
+camera_image_topic: /zed2i/zed_node/rgb_raw/image_raw_color
+camera_info_topic: /zed2i/zed_node/rgb_raw/camera_info
+
 charuco:
   squares_x: 14
   squares_y: 9
