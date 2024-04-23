@@ -243,19 +243,29 @@ class MainWindow(QMainWindow):
         self.setWindowTitle('Camera Calibration')
         self.show()
 
-    def update_camera_topic(self):
-        if self.image_subscriber is not None:
-            self.image_subscriber.update_topic(self.camera_topic_name.text())
+    def update_camera_topic(self, text=None):
+        if text is None:
+            topic_name = self.camera_topic_name.text()
         else:
-            self.image_subscriber = ImageSubscriber(self.camera_topic_name.text())
+            topic_name = text
+
+        if self.image_subscriber is not None:
+            self.image_subscriber.update_topic(topic_name)
+        else:
+            self.image_subscriber = ImageSubscriber(topic_name)
             self.image_subscriber.new_image.connect(self.update_image)
             self.image_subscriber.start()
 
-    def update_camera_info_topic(self):
-        if self.camera_info_subscriber is not None:
-            self.camera_info_subscriber.update_topic(self.camera_info_topic_name.text())
+    def update_camera_info_topic(self, text=None):
+        if text is None:
+            topic_name = self.camera_info_topic_name.text()
         else:
-            self.camera_info_subscriber = CameraInfoSubscriber(self.camera_info_topic_name.text())
+            topic_name = text
+
+        if self.camera_info_subscriber is not None:
+            self.camera_info_subscriber.update_topic(topic_name)
+        else:
+            self.camera_info_subscriber = CameraInfoSubscriber(topic_name)
             self.camera_info_subscriber.new_camera_info.connect(self.update_camera_info)
             self.camera_info_subscriber.start()
 
@@ -283,12 +293,10 @@ class MainWindow(QMainWindow):
 
             # camera topic
             if self.config["camera_image_topic"]!="":
-                self.camera_topic_name.text() = self.config["camera_image_topic"]
-                self.update_camera_topic()
+                self.update_camera_topic(self.config["camera_image_topic"])
 
             if self.config["camera_info_topic"]!="":
-                self.camera_info_topic_name.text() = self.config["camera_info_topic"]
-                self.update_camera_info_topic()
+                self.update_camera_info_topic(self.config["camera_info_topic"])
 
             # aruco board detection
             self.aruco_dict = cv2.aruco.Dictionary_get(cv2.aruco.DICT_5X5_100) # TODO: move to config   
