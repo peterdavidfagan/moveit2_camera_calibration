@@ -18,8 +18,11 @@ from moveit.planning import MoveItPy
 from moveit_configs_utils import MoveItConfigsBuilder
 from ament_index_python.packages import get_package_share_directory
 
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import PoseStamped, Pose
 from control_msgs.action import GripperCommand
+
+from moveit_msgs.msg import CollisionObject
+from shape_msgs.msg import SolidPrimitive
 
 def plan_and_execute(
     robot,
@@ -107,8 +110,39 @@ class FrankaTable(dm_env.Environment):
             ).to_dict()
 
         self.panda = MoveItPy(config_dict=moveit_config)
+        self.planning_scene_monitor = self.panda.get_planning_scene_monitor()
         self.panda_arm = self.panda.get_planning_component("panda_arm") 
         self.gripper_client = GripperClient(args.gripper_controller)
+
+        # add ground plane
+        # TODO: add calibration board geometry
+        with self.planning_scene_monitor.read_write() as scene:
+            collision_object = CollisionObject()
+            collision_object.header.frame_id = "panda_link0"
+            collision_object.id = "ground_plane"
+
+            box_pose = Pose()
+            box_pose.position.x = 0.0
+            box_pose.position.y = 0.0
+            box_pose.position.z = 0.0
+
+            box = SolidPrimitive()
+            box.type = SolidPrimitive.BOX
+            box.dimensions = [2.0, 2.0, 0.001]
+
+            collision_object.primitives.append(box)
+            collision_object.primitive_poses.append(box_pose)
+            collision_object.operation = CollisionObject.ADD
+
+            scene.apply_collision_object(collision_object)
+       
+            # finally handle the allowed collisions for the object
+            scene.allowed_collision_matrix.set_entry("ground_plane", "panda_link0", True)
+            scene.allowed_collision_matrix.set_entry("ground_plane", "panda_link1", True)
+            scene.allowed_collision_matrix.set_entry("ground_plane", "robotiq_85_left_finger_tip_link", True)
+            scene.allowed_collision_matrix.set_entry("ground_plane", "robotiq_85_right_finger_tip_link", True)
+
+            scene.current_state.update()  # Important to ensure the scene is updated
 
         self.dummy_observation = {
                                 "dummy_output": np.zeros(7),                 

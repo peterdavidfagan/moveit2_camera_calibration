@@ -361,9 +361,9 @@ class MainWindow(QMainWindow):
             return None, None
 
         # draw detected charuco board
-        image = aruco.drawDetectedCornersCharuco(
-            image, charuco_corners,
-        )
+        # image = aruco.drawDetectedCornersCharuco(
+        #     image, charuco_corners,
+        # )
 
         return image, charuco_corners, charuco_ids, image.shape[:2]
 
@@ -458,7 +458,6 @@ class MainWindow(QMainWindow):
             images.append(img)
 
             # capture gripper pose
-            print("Gripper pose: {}".format(self.env.gripper_pose()))
             gripper_poses.append(self.env.gripper_pose())
 
             # capture base to ee transform

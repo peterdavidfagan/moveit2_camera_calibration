@@ -24,7 +24,7 @@ workspace:
 eef_start_pose: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0] # [x,y,z,r,p,y]
 
 eye_to_hand_calibration:
-  num_samples: 25 # for debug purposes
+  num_samples: 15 # for debug purposes
   sample_delay: 0.4
 
 eye_in_hand_calibration:
