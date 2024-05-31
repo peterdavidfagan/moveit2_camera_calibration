@@ -14,7 +14,7 @@ from rclpy.action import ActionClient
 from rclpy.node import Node
 from rclpy.logging import get_logger
 
-from moveit.planning import MoveItPy
+from moveit.planning import MoveItPy, PlanRequestParameters, MultiPipelinePlanRequestParameters
 from moveit_configs_utils import MoveItConfigsBuilder
 from ament_index_python.packages import get_package_share_directory
 
@@ -162,6 +162,10 @@ class FrankaTable(dm_env.Environment):
         """
         Samples and moves to a random pose within the calibration workspace.
         """
+        multi_pipeline_plan_request_params = MultiPipelinePlanRequestParameters(
+            self.panda, ["pilz_lin", "pilz_ptp", "ompl_rrtc"]
+        )
+        
         # sample pose
         pose_msg = PoseStamped()
         pose_msg.header.frame_id = "panda_link0"
@@ -210,7 +214,7 @@ class FrankaTable(dm_env.Environment):
         # move to pose
         self.panda_arm.set_start_state_to_current_state()
         self.panda_arm.set_goal_state(pose_stamped_msg=pose_msg, pose_link="panda_link8")
-        plan_and_execute(self.panda, self.panda_arm, sleep_time=3.0)
+        plan_and_execute(self.panda, self.panda_arm, multi_plan_parameters=multi_pipeline_plan_request_params, sleep_time=0.5)
 
         return dm_env.TimeStep(
                 step_type=dm_env.StepType.MID,
