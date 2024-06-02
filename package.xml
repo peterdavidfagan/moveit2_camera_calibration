@@ -11,6 +11,7 @@
 
   <depend>backward_ros</depend>
   <depend>generate_parameter_library</depend>
+  <depend>image_pipeline</depend>
   <depend>moveit_py</depend>
   <depend>pyqt6</depend>
   <depend>dm-env</depend>
